@@ -12,10 +12,8 @@ func main() {
 		switch os.Args[1] {
 		case "run":
 			initContainerParent()
-			break
 		case "container":
 			runContainer()
-			break
 		}
 	} else {
 		log.Println("[HOST] Arguments -> ", os.Args)
@@ -25,8 +23,9 @@ func main() {
 }
 
 func initContainerParent() {
-	log.Println("[CONTAINER-PARENT] Starting container parent process -> ", "/proc/self/exe")
-	cmd := exec.Command("/proc/self/exe", append([]string{"container"}, os.Args[2:]...)...)
+	childProcess := "/proc/self/exe"
+	log.Printf("[CONTAINER-PARENT] Starting container parent process with PID %d -> %s", os.Getpid(), childProcess)
+	cmd := exec.Command(childProcess, append([]string{"container"}, os.Args[2:]...)...)
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID,
@@ -45,9 +44,12 @@ func initContainerParent() {
 }
 
 func runContainer() {
-	log.Println("[CONTAINER] Starting container with process -> ", os.Args[2])
+	log.Printf("[CONTAINER] Starting container with PID %d -> %s", os.Getpid(), os.Args[2])
 
-	syscall.Sethostname([]byte("container"))
+	errCheck(syscall.Sethostname([]byte("container")))
+	errCheck(syscall.Chroot("utils/sample-rootfs"))
+	errCheck(os.Chdir("/"))
+	errCheck(syscall.Mount("proc", "proc", "proc", 0, ""))
 
 	cmd := exec.Command(os.Args[2], os.Args[3:]...)
 	cmd.Stdin = os.Stdin
@@ -57,7 +59,15 @@ func runContainer() {
 	err := cmd.Run()
 	if err != nil {
 		log.Printf("[CONTAINER-PARENT] Failed to start container with process %q -> %v", os.Args[2], err)
+	} else {
+		errCheck(syscall.Unmount("proc", 0))
 	}
 
 	log.Println("[CONTAINER-PARENT] Stopping container")
+}
+
+func errCheck(err error) {
+	if err != nil {
+		log.Fatalln("Encountered error -> ", err)
+	}
 }
